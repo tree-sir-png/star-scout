@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>星探 (Star Scout) · 智能研判系统</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    overflow: hidden;
+    background: #000;
+    font-family: 'Segoe UI', system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    color: #cfe4ff;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :root {
+    --cyan: #4fe3ff;
+    --cyan-soft: rgba(79, 227, 255, .22);
+    --amber: #ffb454;
+    --line: rgba(79, 227, 255, .20);
+  }
+
+  /* ---------- 背景层 ---------- */
+  #bg-layer {
+    position: fixed; inset: 0; z-index: 0;
+    background: url('https://images.unsplash.com/photo-1462331940025-496dfbfc7564?q=80&w=2000&auto=format&fit=crop') center/cover no-repeat;
+    opacity: .55;
+    animation: pulseBg 24s ease-in-out infinite alternate;
+  }
+  @keyframes pulseBg {
+    0%   { transform: scale(1);    opacity: .45; }
+    100% { transform: scale(1.06); opacity: .72; }
+  }
+
+  #starfield { position: fixed; inset: 0; z-index: 1; pointer-events: none; }
+
+  #vignette {
+    position: fixed; inset: 0; z-index: 2; pointer-events: none;
+    background:
+      radial-gradient(ellipse at 50% 50%, rgba(0,10,25,0) 0%, rgba(0,6,18,.5) 58%, rgba(0,3,10,.92) 100%),
+      linear-gradient(180deg, rgba(0,8,20,.72) 0%, rgba(0,4,12,.28) 42%, rgba(0,4,12,.85) 100%);
+  }
+
+  /* ---------- HUD 骨架 ---------- */
+  .hud {
+    position: fixed; inset: 0; z-index: 3;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    gap: 10px;
+    padding: 10px 14px 14px;
+    pointer-events: none;
+  }
+
+  /* ---------- 顶栏 ---------- */
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 16px;
+    background: linear-gradient(90deg, rgba(6,20,40,0), rgba(8,26,50,.55) 25%, rgba(8,26,50,.55) 75%, rgba(6,20,40,0));
+    border-bottom: 1px solid var(--line);
+    pointer-events: auto;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .logo {
+    width: 34px; height: 34px;
+    display: grid; place-items: center;
+    font-size: 17px; color: var(--cyan);
+    border: 1px solid var(--cyan-soft);
+    border-radius: 50%;
+    box-shadow: 0 0 14px rgba(79,227,255,.28), inset 0 0 12px rgba(79,227,255,.14);
+    animation: spin 12s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .brand-txt h1 {
+    font-size: 16px; font-weight: 600; letter-spacing: .18em; color: #eaf8ff;
+    text-shadow: 0 0 14px rgba(79,227,255,.5);
+  }
+  .brand-txt h1 span {
+    font-size: 11px; font-weight: 400; letter-spacing: .32em;
+    color: rgba(120,220,255,.55); margin-left: 8px;
+  }
+  .brand-txt p { font-size: 10px; letter-spacing: .22em; color: rgba(140,200,235,.5); margin-top: 2px; }
+
+  .top-right { display: flex; align-items: center; gap: 22px; }
+  .status {
+    display: flex; align-items: center; gap: 7px;
+    font-size: 11px; letter-spacing: .18em; color: rgba(150,240,200,.85);
+  }
+  .status i {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #4dffb0; box-shadow: 0 0 9px #4dffb0;
+    animation: blink 1.8s ease-in-out infinite;
+  }
+  @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+
+  .clock {
+    font-family: ui-monospace, 'SF Mono', Consolas, monospace;
+    font-size: 17px; letter-spacing: .1em; color: var(--cyan);
+    text-shadow: 0 0 12px rgba(79,227,255,.55);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---------- 主舞台 ---------- */
+  .stage {
+    display: grid;
+    grid-template-columns: 272px 1fr 292px;
+    gap: 12px;
+    min-height: 0;
+  }
+
+  .panel {
+    position: relative;
+    display: flex; flex-direction: column;
+    min-height: 0;
+    background: linear-gradient(160deg, rgba(9,24,46,.62), rgba(4,12,26,.46));
+    border: 1px solid var(--line);
+    backdrop-filter: blur(10px) saturate(130%);
+    -webkit-backdrop-filter: blur(10px) saturate(130%);
+    clip-path: polygon(0 14px, 14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%);
+    pointer-events: auto;
+  }
+  .panel::after {
+    content: '';
+    position: absolute; left: 0; top: 0; width: 14px; height: 14px;
+    border-left: 1px solid var(--cyan); border-top: 1px solid var(--cyan);
+    opacity: .5; pointer-events: none;
+  }
+
+  .panel-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding: 10px 14px 8px;
+    border-bottom: 1px solid rgba(79,227,255,.15);
+    font-size: 12.5px; letter-spacing: .16em; color: #8fe9ff;
+  }
+  .panel-head em { font-style: normal; font-size: 9.5px; letter-spacing: .24em; color: rgba(143,233,255,.42); }
+
+  .panel-foot {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 14px;
+    border-top: 1px solid rgba(79,227,255,.13);
+    font-size: 10.5px; letter-spacing: .16em; color: rgba(150,210,240,.55);
+  }
+  .panel-foot b {
+    font-family: ui-monospace, Consolas, monospace;
+    color: var(--cyan); font-size: 13px; letter-spacing: .05em;
+  }
+
+  /* ---------- 目标列表 ---------- */
+  .target-list {
+    list-style: none;
+    flex: 1; min-height: 0;
+    overflow-y: auto;
+    padding: 4px 0;
+  }
+  .target-list::-webkit-scrollbar { width: 4px; }
+  .target-list::-webkit-scrollbar-thumb { background: rgba(79,227,255,.28); border-radius: 2px; }
+  .target-list::-webkit-scrollbar-track { background: transparent; }
+
+  .t-item {
+    display: grid;
+    grid-template-columns: 8px 1fr auto;
+    gap: 10px; align-items: center;
+    padding: 9px 14px;
+    border-left: 2px solid transparent;
+    transition: background .25s, border-color .25s;
+    animation: slideIn .5s cubic-bezier(.2,.8,.3,1) both;
+    cursor: pointer;
+  }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(-12px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  .t-item:hover { background: rgba(79,227,255,.07); border-left-color: rgba(79,227,255,.6); }
+  .t-item.is-active {
+    background: rgba(79,227,255,.10);
+    border-left-color: var(--cyan);
+    box-shadow: inset 0 0 18px rgba(79,227,255,.08);
+  }
+
+  .t-dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(120,200,235,.7); box-shadow: 0 0 8px rgba(120,200,235,.7); }
+  .t-dot.warm { background: var(--amber); box-shadow: 0 0 9px var(--amber); }
+  .t-dot.hot  { background: #4dffb0; box-shadow: 0 0 10px #4dffb0; }
+
+  .t-name {
+    font-size: 12.5px; letter-spacing: .05em; color: #dff2ff;
+    font-family: ui-monospace, Consolas, monospace;
+  }
+  .t-sub { font-size: 10px; color: rgba(140,195,230,.5); margin-top: 2px; letter-spacing: .08em; }
+  .t-score {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 14px; color: rgba(160,220,250,.8);
+    font-variant-numeric: tabular-nums;
+  }
+  .t-score.warm { color: var(--amber); }
+  .t-score.hot  { color: #4dffb0; text-shadow: 0 0 10px rgba(77,255,176,.6); }
+
+  /* ---------- 中央区 ---------- */
+  .center { position: relative; pointer-events: none; }
+  .c-tag {
+    position: absolute;
+    font-size: 10px; letter-spacing: .2em;
+    color: rgba(120,215,255,.4);
+    font-family: ui-monospace, Consolas, monospace;
+  }
+  .c-tag.tl { left: 6px;  top: 6px; }
+  .c-tag.tr { right: 6px; top: 6px; }
+  .c-tag.bl { left: 6px;  bottom: 6px; }
+  .c-tag.br { right: 6px; bottom: 6px; }
+
+  /* ---------- 指标面板 ---------- */
+  .meters {
+    flex: 1; min-height: 0;
+    overflow-y: auto;
+    padding: 16px 16px 8px;
+    display: flex; flex-direction: column; gap: 17px;
+  }
+  .meters::-webkit-scrollbar { width: 4px; }
+  .meters::-webkit-scrollbar-thumb { background: rgba(79,227,255,.25); border-radius: 2px; }
+
+  .meter-top {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-bottom: 7px;
+    font-size: 11.5px; letter-spacing: .1em; color: rgba(190,225,250,.78);
+  }
+  .meter-top b {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 12.5px; color: var(--cyan); font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  .meter-bar {
+    height: 5px; border-radius: 3px;
+    background: rgba(79,227,255,.10);
+    overflow: hidden;
+    box-shadow: inset 0 0 6px rgba(0,0,0,.5);
+  }
+  .meter-bar i {
+    display: block; height: 100%; width: 0%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, #1b7fa0, #4fe3ff);
+    box-shadow: 0 0 10px rgba(79,227,255,.7);
+    transition: width 1.3s cubic-bezier(.2,.8,.3,1);
+  }
+
+  /* ---------- AI 研判 ---------- */
+  .ai-block { padding: 4px 16px 10px; }
+  .ai-btn {
+    width: 100%; padding: 8px 0;
+    background: rgba(79,227,255,.10);
+    border: 1px solid rgba(79,227,255,.35);
+    color: #8fe9ff; font-size: 11.5px; letter-spacing: .14em;
+    cursor: pointer; border-radius: 2px;
+    font-family: inherit;
+    transition: background .2s, box-shadow .2s, opacity .2s;
+  }
+  .ai-btn:hover:not(:disabled) {
+    background: rgba(79,227,255,.18);
+    box-shadow: 0 0 16px rgba(79,227,255,.25);
+  }
+  .ai-btn:disabled { opacity: .55; cursor: wait; }
+
+  .ai-result {
+    display: none;
+    margin-top: 9px;
+    font-size: 11.5px; line-height: 1.72;
+    color: rgba(195,228,252,.86);
+    max-height: 132px; overflow-y: auto;
+    padding-right: 4px;
+    border-left: 2px solid rgba(79,227,255,.25);
+    padding-left: 9px;
+    animation: fadeIn .4s ease both;
+  }
+  .ai-result.show { display: block; }
+  .ai-result::-webkit-scrollbar { width: 3px; }
+  .ai-result::-webkit-scrollbar-thumb { background: rgba(79,227,255,.3); border-radius: 2px; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* ---------- 底栏日志 ---------- */
+  .bottombar {
+    display: flex; align-items: flex-start; gap: 14px;
+    padding: 9px 16px;
+    background: linear-gradient(90deg, rgba(6,20,40,0), rgba(8,26,50,.5) 20%, rgba(8,26,50,.5) 80%, rgba(6,20,40,0));
+    border-top: 1px solid var(--line);
+    pointer-events: auto;
+  }
+  .log-tag {
+    flex: none;
+    font-size: 10px; letter-spacing: .24em;
+    color: var(--cyan); opacity: .75;
+    padding: 2px 8px;
+    border: 1px solid rgba(79,227,255,.28);
+    border-radius: 2px;
+    margin-top: 1px;
+  }
+  .log { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .log-line {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 11px; letter-spacing: .04em;
+    color: rgba(175,212,240,.72);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    animation: logIn .45s ease both;
+  }
+  @keyframes logIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  .log-line .lt { color: rgba(79,227,255,.5); margin-right: 8px; }
+
+  /* ---------- 响应式 ---------- */
+  @media (max-width: 980px) {
+    .stage { grid-template-columns: 1fr; }
+    .side-left, .side-right { display: none; }
+  }
+  @media (max-width: 560px) {
+    .brand-txt h1 span { display: none; }
+    .clock { font-size: 14px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="bg-layer"></div>
+<canvas id="starfield"></canvas>
+<div id="vignette"></div>
+
+<div class="hud">
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">✦</div>
+      <div class="brand-txt">
+        <h1>星探 <span>STAR SCOUT</span></h1>
+        <p>智能研判系统 · v2.5.0 · GPT-6-Astra</p>
+      </div>
+    </div>
+    <div class="top-right">
+      <div class="status"><i></i>系统在线</div>
+      <div class="clock" id="clock">00:00:00</div>
+    </div>
+  </header>
+
+  <main class="stage">
+
+    <aside class="panel side-left">
+      <div class="panel-head"><span>目标侦测</span><em>TARGETS</em></div>
+      <ul class="target-list" id="targetList"></ul>
+      <div class="panel-foot"><span>候选池</span><b id="poolCount">128</b></div>
+    </aside>
+
+    <section class="center">
+      <span class="c-tag tl">SEC-07 · α 象限</span>
+      <span class="c-tag tr">SCAN 64%</span>
+      <span class="c-tag bl">DEC +42°18′</span>
+      <span class="c-tag br">RA 05h 35m</span>
+    </section>
+
+    <aside class="panel side-right">
+      <div class="panel-head"><span>研判指标</span><em>METRICS</em></div>
+      <div class="meters" id="meters"></div>
+      <div class="ai-block">
+        <button id="aiBtn" class="ai-btn">AI 研判 · gpt-6-Astra</button>
+        <div id="aiResult" class="ai-result"></div>
+      </div>
+      <div class="panel-foot"><span>综合置信度</span><b id="conf">0.0</b></div>
+    </aside>
+
+  </main>
+
+  <footer class="bottombar">
+    <span class="log-tag">SYS LOG</span>
+    <div class="log" id="log"></div>
+  </footer>
+
+</div>
+
+<script>
+/* =========================================================
+   1. 星空 Canvas
+   ========================================================= */
+const cv  = document.getElementById('starfield');
+const ctx = cv.getContext('2d');
+
+let W = 0, H = 0, DPR = 1;
+let stars = [];
+let nodes = [];
+
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  cv.width  = Math.round(W * DPR);
+  cv.height = Math.round(H * DPR);
+  cv.style.width  = W + 'px';
+  cv.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  buildStars();
+  buildNodes();
+}
+
+function buildStars() {
+  const count = Math.min(460, Math.round((W * H) / 3200));
+  stars = [];
+  for (let i = 0; i < count; i++) {
+    stars.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      z: 0.2 + Math.random() * 0.8,
+      r: 0.4 + Math.random() * 1.2,
+      ph: Math.random() * Math.PI * 2,
+      sp: 0.5 + Math.random() * 1.6
+    });
+  }
+}
+
+function buildNodes() {
+  nodes = [];
+  for (let i = 0; i < 8; i++) {
+    nodes.push({
+      a: Math.random() * Math.PI * 2,
+      d: 0.30 + Math.random() * 0.70,
+      sp: (Math.random() < 0.3 ? -1 : 1) * (0.06 + Math.random() * 0.10),
+      ph: Math.random() * Math.PI * 2,
+      lock: i < 3
+    });
+  }
+}
+
+function drawStars(now) {
+  const s = now * 0.001;
+  for (let i = 0; i < stars.length; i++) {
+    const st = stars[i];
+    st.x += st.z * 0.18;
+    st.y -= st.z * 0.06;
+    if (st.x > W + 4) st.x = -4;
+    if (st.y < -4)    st.y = H + 4;
+
+    const tw = 0.55 + 0.45 * Math.sin(s * st.sp * 2 + st.ph);
+    const alpha = tw * (0.30 + st.z * 0.70);
+    const r = st.r * (0.6 + st.z * 0.8);
+
+    if (st.r > 1.25) {
+      ctx.beginPath();
+      ctx.arc(st.x, st.y, r * 3.6, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(110,190,255,' + (alpha * 0.10).toFixed(3) + ')';
+      ctx.fill();
+    }
+
+    ctx.beginPath();
+    ctx.arc(st.x, st.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(' + Math.round(175 + 60 * st.z) + ',228,255,' + alpha.toFixed(3) + ')';
+    ctx.fill();
+  }
+}
+
+function bracket(x, y, size, color) {
+  const L = Math.max(3, size * 0.5);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(x - size, y - size + L); ctx.lineTo(x - size, y - size); ctx.lineTo(x - size + L, y - size);
+  ctx.moveTo(x + size - L, y - size); ctx.lineTo(x + size, y - size); ctx.lineTo(x + size, y - size + L);
+  ctx.moveTo(x + size, y + size - L); ctx.lineTo(x + size, y + size); ctx.lineTo(x + size - L, y + size);
+  ctx.moveTo(x - size + L, y + size); ctx.lineTo(x - size, y + size); ctx.lineTo(x - size, y + size - L);
+  ctx.stroke();
+}
+
+function drawCore(now) {
+  const s  = now * 0.001;
+  const cx = W * 0.5;
+  const cy = H * 0.5;
+  const R  = Math.min(W, H) * 0.34;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+
+  for (let i = 0; i < 3; i++) {
+    const rr = R * (0.45 + i * 0.19);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, rr, rr * 0.42, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(79,227,255,' + (0.10 - i * 0.024).toFixed(3) + ')';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  ctx.beginPath();
+  for (let i = 0; i < 72; i++) {
+    const a = (i / 72) * Math.PI * 2;
+    const r1 = R * 1.02;
+    const r2 = R * (i % 6 === 0 ? 1.07 : 1.045);
+    ctx.moveTo(Math.cos(a) * r1, Math.sin(a) * r1 * 0.42);
+    ctx.lineTo(Math.cos(a) * r2, Math.sin(a) * r2 * 0.42);
+  }
+  ctx.strokeStyle = 'rgba(79,227,255,.16)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  const ang   = (s * 0.55) % (Math.PI * 2);
+  const sweep = 0.72;
+  const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, R);
+  grad.addColorStop(0,   'rgba(79,227,255,0.14)');
+  grad.addColorStop(0.65,'rgba(79,227,255,0.05)');
+  grad.addColorStop(1,   'rgba(79,227,255,0)');
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.arc(0, 0, R, ang, ang + sweep);
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(Math.cos(ang + sweep) * R, Math.sin(ang + sweep) * R);
+  ctx.strokeStyle = 'rgba(140,245,255,0.32)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  for (let i = 0; i < nodes.length; i++) {
+    const nd = nodes[i];
+    const a = nd.a + s * nd.sp;
+    const x = Math.cos(a) * R * nd.d;
+    const y = Math.sin(a) * R * nd.d * 0.42;
+    const pulse = (Math.sin(s * 2.2 + nd.ph) + 1) * 0.5;
+
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(x, y);
+    ctx.strokeStyle = 'rgba(79,227,255,0.07)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(x, y, 2.2 + pulse * 11, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(120,240,255,' + (0.42 * (1 - pulse)).toFixed(3) + ')';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(x, y, 2.2, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(155,245,255,0.95)';
+    ctx.fill();
+
+    if (nd.lock) {
+      bracket(x, y, 8 + pulse * 2.5, 'rgba(255,180,84,' + (0.55 + pulse * 0.45).toFixed(3) + ')');
+    }
+  }
+
+  const cg = ctx.createRadialGradient(0, 0, 0, 0, 0, 26);
+  cg.addColorStop(0, 'rgba(180,250,255,0.55)');
+  cg.addColorStop(1, 'rgba(79,227,255,0)');
+  ctx.beginPath();
+  ctx.arc(0, 0, 26, 0, Math.PI * 2);
+  ctx.fillStyle = cg;
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(0, 0, 2.6, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(200,252,255,0.95)';
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function loop(now) {
+  ctx.clearRect(0, 0, W, H);
+  drawStars(now);
+  drawCore(now);
+  requestAnimationFrame(loop);
+}
+
+window.addEventListener('resize', resize);
+resize();
+requestAnimationFrame(loop);
+
+
+/* =========================================================
+   2. HUD 数据层
+   ========================================================= */
+
+/* ---- 时钟 ---- */
+const clockEl = document.getElementById('clock');
+function tickClock() {
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  clockEl.textContent = p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+}
+tickClock();
+setInterval(tickClock, 1000);
+
+/* ---- 统一目标数据源 ---- */
+/* base: 五项指标基准值 [光谱匹配, 大气特征, 轨道稳定性, 信号强度, 宜居指数] */
+const TARGETS = [
+  { id:'HD-40307g',  name:'HD 40307 g',  sub:'宜居带 · 42.1 光年',   base:[86, 74, 91, 79, 88] },
+  { id:'KEP-442b',   name:'Kepler-442b', sub:'超地球 · 1206 光年',   base:[82, 68, 87, 73, 84] },
+  { id:'TRAPP-1e',   name:'TRAPPIST-1e', sub:'岩石行星 · 40.7 光年', base:[78, 71, 83, 69, 76] },
+  { id:'PROX-b',     name:'Proxima b',   sub:'红矮星系 · 4.24 光年', base:[73, 62, 79, 65, 72] },
+  { id:'TOI-700d',   name:'TOI-700 d',   sub:'宜居带 · 101.4 光年',  base:[88, 81, 90, 84, 86] },
+  { id:'GJ-667Cc',   name:'GJ 667 Cc',   sub:'超级地球 · 23.6 光年', base:[76, 66, 82, 71, 78] },
+  { id:'K2-18b',     name:'K2-18 b',     sub:'水汽特征 · 124 光年',  base:[84, 79, 80, 77, 81] },
+  { id:'WOLF-1061c', name:'Wolf 1061c',  sub:'近邻候选 · 13.8 光年', base:[71, 58, 75, 62, 69] },
+  { id:'LHS-1140b',  name:'LHS 1140 b',  sub:'致密岩石 · 48.9 光年', base:[80, 75, 85, 78, 82] },
+  { id:'TEEG-b',     name:'Teegarden b', sub:'温带岩体 · 12.5 光年', base:[89, 83, 88, 86, 87] },
+  { id:'ROSS-128b',  name:'Ross 128 b',  sub:'静默恒星 · 11.0 光年', base:[75, 64, 81, 68, 74] }
+];
+
+let activeTarget = TARGETS[0];
+
+/* ---- 目标列表 ---- */
+const targetListEl = document.getElementById('targetList');
+const poolCountEl  = document.getElementById('poolCount');
+
+function calcScore(t) {
+  return Math.round(t.base.reduce((a, b) => a + b, 0) / t.base.length);
+}
+
+function renderTargets() {
+  const pool = TARGETS.slice();
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  let picked = pool.slice(0, 6);
+  if (!picked.includes(activeTarget)) picked[0] = activeTarget;
+
+  targetListEl.innerHTML = picked.map((t, i) => {
+    const score = calcScore(t);
+    const cls = score >= 85 ? 'hot' : score >= 75 ? 'warm' : '';
+    const isSel = t.id === activeTarget.id;
+    return '<li class="t-item' + (isSel ? ' is-active' : '') + '" data-id="' + t.id + '" style="animation-delay:' + (i * 55) + 'ms">' +
+             '<span class="t-dot ' + cls + '"></span>' +
+             '<div class="t-main">' +
+               '<div class="t-name">' + t.name + '</div>' +
+               '<div class="t-sub">' + t.sub + '</div>' +
+             '</div>' +
+             '<span class="t-score ' + cls + '">' + score + '</span>' +
+           '</li>';
+  }).join('');
+
+  poolCountEl.textContent = 118 + Math.floor(Math.random() * 20);
+
+  targetListEl.querySelectorAll('.t-item').forEach(li => {
+    li.addEventListener('click', () => {
+      const t = TARGETS.find(x => x.id === li.dataset.id);
+      if (t && t !== activeTarget) {
+        activeTarget = t;
+        renderTargets();
+        buildMeters();          // 指标面板随目标重建
+        hideAiResult();
+        pushLog('目标切换 → ' + t.name + ' · 指标已重载');
+      }
+    });
+  });
+}
+
+/* ---- 指标面板（绑定 activeTarget） ---- */
+const METRIC_LABELS = ['光谱匹配度', '大气特征', '轨道稳定性', '信号强度', '宜居指数'];
+const metersEl = document.getElementById('meters');
+const confEl   = document.getElementById('conf');
+
+let meterRecords = [];
+
+function buildMeters() {
+  metersEl.innerHTML = '';
+  meterRecords = [];
+  const base = activeTarget.base;
+
+  METRIC_LABELS.forEach((label, i) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'meter';
+    wrap.innerHTML =
+      '<div class="meter-top"><span>' + label + '</span><b>0%</b></div>' +
+      '<div class="meter-bar"><i></i></div>';
+    metersEl.appendChild(wrap);
+
+    const fill = wrap.querySelector('i');
+    const val  = wrap.querySelector('b');
+    const baseVal = base[i];
+
+    const update = (force) => {
+      const v = Math.max(30, Math.min(99, baseVal + (force ? 0 : (Math.random() * 12 - 6))));
+      fill.style.width = v.toFixed(1) + '%';
+      val.textContent = Math.round(v) + '%';
+    };
+
+    meterRecords.push({ baseVal, fill, val, update });
+    setTimeout(() => update(true), 80 + i * 100);
+  });
+
+  setTimeout(updateConf, 620);
+}
+
+function refreshMeters() {
+  meterRecords.forEach(m => m.update(false));
+  updateConf();
+}
+
+function updateConf() {
+  if (!meterRecords.length) return;
+  const avg = meterRecords.reduce((a, m) => a + (parseFloat(m.val.textContent) || 0), 0) / meterRecords.length;
+  confEl.textContent = (avg / 100).toFixed(3);
+}
+
+/* ---- 系统日志 ---- */
+const LOG_POOL = [
+  '深空阵列同步完成 · 时延 0.4s',
+  '目标光谱复核通过',
+  '探测到周期性凌星信号 → 置信度 0.91',
+  '星际尘埃密度 +12.4%',
+  '轨道摄动模型已更新至 v3.2',
+  '异常射电脉冲标记为 A-07',
+  '大气吸收谱线拟合中…',
+  '候选目标池刷新 · 新增 3 项',
+  '量子时钟校准完成 · 偏差 2ns',
+  '星图拼接进度 87%',
+  '信噪比优化：14.2dB → 18.6dB',
+  '引力透镜辅助观测窗口开启'
+];
+const logEl = document.getElementById('log');
+
+function ts() {
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+}
+
+function pushLog(text) {
+  const line = document.createElement('div');
+  line.className = 'log-line';
+  line.innerHTML = '<span class="lt">[' + ts() + ']</span>' + text;
+  logEl.appendChild(line);
+  while (logEl.children.length > 4) logEl.removeChild(logEl.firstChild);
+}
+
+function randLog() {
+  return LOG_POOL[Math.floor(Math.random() * LOG_POOL.length)];
+}
+
+/* ---- AI 研判 ---- */
+const aiBtn    = document.getElementById('aiBtn');
+const aiResult = document.getElementById('aiResult');
+
+function hideAiResult() {
+  aiResult.classList.remove('show');
+  aiResult.textContent = '';
+}
+
+aiBtn.addEventListener('click', async () => {
+  const vals = meterRecords.map(m => parseFloat(m.val.textContent) || 0);
+  if (vals.length !== 5) return;
+
+  aiBtn.disabled = true;
+  aiBtn.textContent = '研判中…';
+  aiResult.classList.add('show');
+  aiResult.textContent = 'gpt-6-Astra 正在分析 ' + activeTarget.name + ' …';
+  pushLog('AI 研判请求 → ' + activeTarget.name);
+
+  try {
+    const res = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        target: { name: activeTarget.name, sub: activeTarget.sub },
+        metrics: vals
+      })
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok || data.error) {
+      aiResult.textContent = '研判失败：' + (data.error || ('HTTP ' + res.status));
+      pushLog('AI 研判失败 · ' + (data.error || ('HTTP ' + res.status)));
+    } else {
+      aiResult.textContent = data.analysis || '未返回内容';
+      pushLog('AI 研判完成 · ' + activeTarget.name);
+    }
+  } catch (e) {
+    aiResult.textContent = '请求失败：' + e.message;
+    pushLog('AI 请求异常 · ' + e.message);
+  } finally {
+    aiBtn.disabled = false;
+    aiBtn.textContent = 'AI 研判 · gpt-6-Astra';
+  }
+});
+
+/* ---- 启动 ---- */
+renderTargets();
+buildMeters();
+setInterval(renderTargets, 9000);
+setInterval(refreshMeters, 3200);
+setInterval(() => pushLog(randLog()), 2100);
+pushLog('系统初始化完成 · 进入全天候扫描模式');
+pushLog('gpt-6-Astra 推理通道就绪');
+</script>
+</body>
+</html>
