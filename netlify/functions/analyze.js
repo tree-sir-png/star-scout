@@ -2,8 +2,7 @@
 export default async (req, context) => {
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-      status: 405,
-      headers: { 'Content-Type': 'application/json' }
+      status: 405, headers: { 'Content-Type': 'application/json' }
     });
   }
 
@@ -11,7 +10,6 @@ export default async (req, context) => {
     const body = await req.json();
     const { target, metrics, apiKey, model } = body;
     
-    // 获取密钥，优先用前端传的
     const finalKey = apiKey || Netlify.env.get('ROXY_API_KEY');
     const finalModel = model || 'gpt-6-astra';
 
@@ -30,10 +28,10 @@ export default async (req, context) => {
       '%，轨道稳定性 ' + metrics[2] + '%，信号强度 ' + metrics[3] +
       '%，宜居指数 ' + metrics[4] + '%。';
 
-    // ⚠️⚠️⚠️ 注意这里：改成 RoxyAI 给你的中转接口地址！
-    const ROXY_URL = 'https://www.roxyai.online/v1'; 
+    // ⚠️ 注意：这里把地址补全成了标准的 /v1/chat/completions
+    // 如果你的 Roxy 域名不是 api.roxyai.online，请把前面的域名换掉
+    const ROXY_URL = 'https://api.roxyai.online/v1/chat/completions'; 
     
-    // 注意：中转站通常使用标准的 Chat Completions 格式
     const upstream = await fetch(ROXY_URL, {
       method: 'POST',
       headers: {
@@ -50,7 +48,6 @@ export default async (req, context) => {
 
     const data = await upstream.json().catch(() => ({}));
 
-    // 兼容各种中转站的报错格式
     if (!upstream.ok || data.error) {
       const msg = data.error?.message || data.error || data.msg || ('HTTP ' + upstream.status);
       return new Response(JSON.stringify({ error: String(msg) }), {
@@ -59,15 +56,9 @@ export default async (req, context) => {
       });
     }
 
-    // 中转站通常返回 Chat Completions 格式
+    // 标准 Chat Completions 格式的取值方式
     let text = data.choices?.[0]?.message?.content;
     
-    // 兼容有些中转可能支持新版 responses 格式
-    if (!text && data.output) {
-        const messageItem = (data.output || []).find(o => o.type === 'message');
-        text = messageItem?.content?.[0]?.text;
-    }
-
     if (!text) {
       return new Response(JSON.stringify({ error: '未返回文本', raw: data }), {
         status: 502, headers: { 'Content-Type': 'application/json' }
@@ -75,8 +66,7 @@ export default async (req, context) => {
     }
 
     return new Response(JSON.stringify({ analysis: text }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
+      status: 200, headers: { 'Content-Type': 'application/json' }
     });
 
   } catch (error) {
